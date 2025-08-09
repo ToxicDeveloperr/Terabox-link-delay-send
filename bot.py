@@ -3,6 +3,7 @@ import re
 import asyncio
 import logging
 from collections import deque
+import threading
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -44,13 +45,11 @@ def extract_terabox_links(text):
 
 # Handler for incoming messages
 async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check if the message is from a channel or has a caption
     if update.channel_post and (update.channel_post.caption or update.channel_post.text):
         message_text = update.channel_post.caption or update.channel_post.text
         links = extract_terabox_links(message_text)
 
         if links:
-            # Add extracted links to the queue
             for link in links:
                 link_queue.append(link)
             logging.info(f"Added {len(links)} links to the queue.")
@@ -90,35 +89,37 @@ async def send_links_periodically(application: Application):
             else:
                 logging.info("Queue is empty, waiting for new links.")
 
+
 # Basic health check endpoint for the web server
 @app.route("/")
 def home():
     return "Bot is running!", 200
 
-def main():
-    # Create the application and pass it your bot's token.
+# Function to run the bot's polling loop
+def run_bot():
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Add handlers
     application.add_handler(
         MessageHandler(filters.PHOTO | filters.TEXT | filters.Document.ALL, handle_posts)
     )
     application.add_handler(
         CommandHandler("set_interval", set_interval_command)
     )
-
-    # Run the bot and the web server together
-    # We use asyncio to run both a polling loop for the bot and the Flask web server
-    loop = asyncio.get_event_loop()
-    loop.create_task(application.run_polling())
-    loop.create_task(asyncio.to_thread(lambda: app.run(host="0.0.0.0", port=PORT)))
     
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        loop.close()
+    # Start the periodic sending task
+    asyncio.create_task(send_links_periodically(application))
+    
+    application.run_polling()
+
+
+def main():
+    # Start the bot in a separate thread
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Run the Flask web server in the main thread
+    app.run(host="0.0.0.0", port=PORT)
+
 
 if __name__ == "__main__":
     main()
