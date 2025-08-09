@@ -16,44 +16,40 @@ from flask import Flask, request
 
 # Flask app setup
 app = Flask(__name__)
-# Replace with your actual bot token
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-# Replace with your group chat ID
 GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")
-# Define the port from environment variables, defaulting to 8080
 PORT = int(os.environ.get("PORT", 8080))
 
-# Basic configuration for logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Queue to store links for sequential processing
 link_queue = deque()
-# Default sending interval in minutes
 sending_interval = 1
-# A lock to ensure only one task processes the queue at a time
 queue_lock = asyncio.Lock()
 
-
-# Function to extract Terabox links using regex
+# Function to extract Terabox links using an updated regex
 def extract_terabox_links(text):
-    terabox_pattern = r"(https?://\S*terabox\.com/\S+)"
+    terabox_pattern = r"(https?://\S*(terabox\.com|1024terabox\.com|terafileshare\.com)/\S+)"
     return re.findall(terabox_pattern, text)
 
-
-# Handler for incoming messages
+# Handler for incoming messages (now handles all messages, not just channel posts)
 async def handle_posts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.channel_post and (update.channel_post.caption or update.channel_post.text):
-        message_text = update.channel_post.caption or update.channel_post.text
+    message = update.channel_post or update.message
+    
+    if message and (message.caption or message.text):
+        message_text = message.caption or message.text
         links = extract_terabox_links(message_text)
 
         if links:
             for link in links:
                 link_queue.append(link)
             logging.info(f"Added {len(links)} links to the queue.")
-
+            # A good practice is to provide some feedback to the user
+            await message.reply_text(f"Links found and added to queue: {len(links)}")
+        else:
+            logging.info("No Terabox links found in the message.")
 
 # Command to set the sending interval
 async def set_interval_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -73,7 +69,6 @@ async def set_interval_command(update: Update, context: ContextTypes.DEFAULT_TYP
             "Please provide a valid number in minutes. Example: `/set_interval 10`"
         )
 
-
 # Function to process the queue and send links
 async def send_links_periodically(application: Application):
     while True:
@@ -88,7 +83,6 @@ async def send_links_periodically(application: Application):
                 logging.info(f"Sent link: {command_text}")
             else:
                 logging.info("Queue is empty, waiting for new links.")
-
 
 # Basic health check endpoint for the web server
 @app.route("/")
@@ -111,15 +105,11 @@ def run_bot():
     
     application.run_polling()
 
-
 def main():
-    # Start the bot in a separate thread
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
-    # Run the Flask web server in the main thread
     app.run(host="0.0.0.0", port=PORT)
-
 
 if __name__ == "__main__":
     main()
