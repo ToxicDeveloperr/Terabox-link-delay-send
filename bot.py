@@ -31,7 +31,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # Queue to store links for sequential processing
 link_queue = deque()
 # Default sending interval in minutes
-sending_interval = 10
+sending_interval = 1
 # A lock to ensure only one task processes the queue at a time
 queue_lock = asyncio.Lock()
 
